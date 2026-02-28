@@ -1,0 +1,29 @@
+# requirements.txt
+
+# FastAPI
+fastapi
+uvicorn[standard]
+python-multipart          # needed for file uploads
+
+# LangChain
+langchain
+langchain-core
+langchain-community
+langchain-groq
+langchain-huggingface
+langchain-pinecone        # LangChain ↔ Pinecone integration
+
+# LangGraph
+langgraph
+
+# Pinecone client
+pinecone-client           # pip installs as `pinecone`
+
+# PDF loading
+pypdf
+
+# Embeddings
+sentence-transformers
+
+# Env
+python-dotenv

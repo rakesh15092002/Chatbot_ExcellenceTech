@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 1. Balanced Global Text Size */
+.prose {
+  color: #d1d5db; 
+  font-size: 0.98rem; /* Clear but not oversized */
+  line-height: 1.65;
+}
+
+.prose strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* 2. Inline Code (Single words) */
+.prose :not(pre) > code {
+  background-color: #374151; 
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.25rem;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.88rem; 
+  color: #fb7185; 
+}
+
+/* 3. Large Code Blocks (Java/Python snippets) */
+.prose pre {
+  background-color: #161616 !important; 
+  padding: 1rem !important;
+  border-radius: 0.5rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  margin: 1.2rem 0 !important;
+  width: 100%;
+  overflow-x: auto;
+}
+
+.prose pre code {
+  background-color: transparent !important; 
+  padding: 0 !important;
+  font-size: 0.92rem !important; /* Perfect balance for code readability */
+  line-height: 1.5 !important;
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+}
+
+/* 4. Formatting Fixes */
+.prose code::before, 
+.prose code::after {
+  content: "" !important; /* Removes backticks */
+}
+
+/* Custom Scrollbar for Code Blocks */
+.prose pre::-webkit-scrollbar {
+  height: 6px;
+}
+.prose pre::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 10px;
+}

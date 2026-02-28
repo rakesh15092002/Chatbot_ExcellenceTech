@@ -1,0 +1,16 @@
+# Python caches
+**/__pycache__/
+*.pyc
+
+# Environments
+backend/venv/
+.env
+
+backend/uploads/*
+
+# Database (Aapka local DB GitHub pe nahi jana chahiye)
+backend/*.db
+
+# Node Modules
+frontend/node_modules/
+frontend/dist/
