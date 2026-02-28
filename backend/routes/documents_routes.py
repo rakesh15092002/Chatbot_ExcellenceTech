@@ -8,8 +8,8 @@ from services.document_service import (
 
 documents_router = APIRouter()
 
-ALLOWED_TYPES  = {"application/pdf"}
-MAX_SIZE_MB    = 20
+ALLOWED_TYPES = {"application/pdf"}
+MAX_SIZE_MB   = 20
 
 
 # ─────────────────────────────────────────────
@@ -20,19 +20,40 @@ async def upload_document(
     thread_id: str = Query(..., description="Thread to attach this PDF to"),
     file: UploadFile = File(...),
 ):
+    # ✅ Check 1: File type
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Only PDF files are supported. Received: {file.content_type}",
+            detail={
+                "success": False,
+                "toast":   "error",
+                "message": f"❌ Invalid file type. Only PDF files are supported.",
+            }
         )
 
     file_bytes = await file.read()
     size_mb    = len(file_bytes) / (1024 * 1024)
 
+    # ✅ Check 2: File size
     if size_mb > MAX_SIZE_MB:
         raise HTTPException(
             status_code=400,
-            detail=f"File too large ({size_mb:.1f} MB). Max: {MAX_SIZE_MB} MB.",
+            detail={
+                "success": False,
+                "toast":   "error",
+                "message": f"❌ File too large ({size_mb:.1f} MB). Maximum allowed size is {MAX_SIZE_MB} MB.",
+            }
+        )
+
+    # ✅ Check 3: Empty file
+    if len(file_bytes) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "toast":   "error",
+                "message": "❌ Uploaded file is empty. Please upload a valid PDF.",
+            }
         )
 
     result = process_pdf(
@@ -41,13 +62,26 @@ async def upload_document(
         filename   = file.filename or "document.pdf",
     )
 
+    # ✅ Check 4: Processing error (scanned/image PDF with no text)
     if "error" in result:
-        raise HTTPException(status_code=422, detail=result["error"])
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "success": False,
+                "toast":   "error",
+                "message": f"❌ {result['error']}",
+            }
+        )
 
+    # ✅ Success
     return {
-        "message":   "Document uploaded and indexed into Pinecone ✅",
-        "thread_id": thread_id,
-        **result,
+        "success":        True,
+        "toast":          "success",
+        "message":        f"✅ '{file.filename}' uploaded and indexed successfully!",
+        "thread_id":      thread_id,
+        "doc_id":         result["doc_id"],
+        "filename":       result["filename"],
+        "chunks_indexed": result["chunks_indexed"],
     }
 
 
@@ -57,7 +91,12 @@ async def upload_document(
 @documents_router.get("/")
 def list_documents(thread_id: str = Query(...)):
     docs = get_documents_for_thread(thread_id)
-    return {"thread_id": thread_id, "documents": docs, "count": len(docs)}
+    return {
+        "success":   True,
+        "thread_id": thread_id,
+        "documents": docs,
+        "count":     len(docs),
+    }
 
 
 # ─────────────────────────────────────────────
@@ -66,6 +105,20 @@ def list_documents(thread_id: str = Query(...)):
 @documents_router.delete("/{doc_id}")
 def delete_doc(doc_id: str):
     result = delete_document(doc_id)
+
     if "error" in result:
-        raise HTTPException(status_code=404, detail=result["error"])
-    return {"message": "Document deleted from Pinecone ✅", **result}
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "success": False,
+                "toast":   "error",
+                "message": f"❌ Document not found.",
+            }
+        )
+
+    return {
+        "success":  True,
+        "toast":    "success",
+        "message":  f"✅ '{result['filename']}' deleted successfully!",
+        **result,
+    }

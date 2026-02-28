@@ -1,20 +1,20 @@
-# services/thread_services.py
 import uuid
 from datetime import datetime, timezone
-from db.sqlite_conn import get_connection    # ✅ correct path
+from db.sqlite_conn import get_connection
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def create_thread(name: str = "New Chat") -> str:
+# ✅ Accept user_id
+def create_thread(name: str = "New Chat", user_id: str = "") -> str:
     thread_id = str(uuid.uuid4())
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO threads (thread_id, name, created_at) VALUES (?, ?, ?)",
-            (thread_id, name, _now()),
+            "INSERT INTO threads (thread_id, user_id, name, created_at) VALUES (?, ?, ?, ?)",
+            (thread_id, user_id, name, _now()),
         )
         conn.commit()
     finally:
@@ -22,11 +22,14 @@ def create_thread(name: str = "New Chat") -> str:
     return thread_id
 
 
-def get_threads() -> list[dict]:
+# ✅ Filter threads by user_id
+def get_threads(user_id: str) -> list[dict]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT thread_id, name, created_at FROM threads ORDER BY created_at DESC"
+            "SELECT thread_id, name, created_at FROM threads "
+            "WHERE user_id = ? ORDER BY created_at DESC",
+            (user_id,)
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -63,7 +66,6 @@ def get_thread_messages_for_api(thread_id: str) -> list[dict]:
 
 
 def get_thread_history(thread_id: str, limit: int = 20):
-    """Returns last `limit` messages as LangChain message objects."""
     from langchain_core.messages import HumanMessage, AIMessage
 
     conn = get_connection()
@@ -79,8 +81,7 @@ def get_thread_history(thread_id: str, limit: int = 20):
     finally:
         conn.close()
 
-    rows = list(reversed(rows))   # oldest first for the LLM
-
+    rows = list(reversed(rows))
     history = []
     for row in rows:
         if row["role"] == "user":
