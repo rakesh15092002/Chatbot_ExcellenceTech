@@ -7,7 +7,6 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# ✅ Accept user_id
 def create_thread(name: str = "New Chat", user_id: str = "") -> str:
     thread_id = str(uuid.uuid4())
     conn = get_connection()
@@ -22,7 +21,6 @@ def create_thread(name: str = "New Chat", user_id: str = "") -> str:
     return thread_id
 
 
-# ✅ Filter threads by user_id
 def get_threads(user_id: str) -> list[dict]:
     conn = get_connection()
     try:

@@ -1,10 +1,11 @@
 import React from 'react';
 import { useUser } from '@clerk/clerk-react';
+import { PanelLeftOpen } from 'lucide-react';  // ✅
 
-const ChatNavbar = () => {
+// ✅ Accept toggleSidebar
+const ChatNavbar = ({ toggleSidebar }) => {
   const { user } = useUser();
 
-  // ✅ Get initials from name as fallback
   const getInitials = (name) => {
     if (!name) return "?";
     return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
@@ -12,24 +13,28 @@ const ChatNavbar = () => {
 
   return (
     <header className="h-14 flex items-center px-4 justify-between border-b border-white/5">
-      <div className="ml-10 md:ml-0 font-medium text-gray-400 text-sm">
-        AI Orbit v1.0
+      <div className="flex items-center gap-3">
+        {/* ✅ Toggle button — opens sidebar when closed */}
+        <button
+          onClick={toggleSidebar}
+          className="p-1.5 hover:bg-[#2f2f2f] rounded-md text-gray-500 hover:text-white transition-colors"
+        >
+          <PanelLeftOpen size={18} />
+        </button>
+
+        <div className="font-medium text-gray-400 text-sm">AI Orbit v1.0</div>
       </div>
 
       {/* ✅ User profile */}
       {user && (
         <div className="flex items-center gap-3">
-          {/* Name + email */}
           <div className="hidden sm:flex flex-col items-end">
-            <span className="text-white text-xs font-medium">
-              {user.fullName}
-            </span>
+            <span className="text-white text-xs font-medium">{user.fullName}</span>
             <span className="text-gray-500 text-[10px]">
               {user.primaryEmailAddress?.emailAddress}
             </span>
           </div>
 
-          {/* Avatar */}
           {user.imageUrl ? (
             <img
               src={user.imageUrl}

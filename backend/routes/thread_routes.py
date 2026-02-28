@@ -1,103 +1,43 @@
-import uuid
-from datetime import datetime, timezone
-from db.sqlite_conn import get_connection
+from fastapi import APIRouter, HTTPException, Header
+from services.thread_services import (
+    create_thread,
+    get_threads,
+    get_thread_messages_for_api,
+    delete_thread,
+)
+
+thread_router = APIRouter()
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+# POST /thread/?name=xxx
+@thread_router.post("/")
+def create_thread_api(
+    name: str = "New Chat",
+    x_user_id: str = Header(..., description="Clerk user ID"),
+):
+    thread_id = create_thread(name, x_user_id)
+    return {"thread_id": thread_id, "name": name}
 
 
-# ✅ Accept user_id
-def create_thread(name: str = "New Chat", user_id: str = "") -> str:
-    thread_id = str(uuid.uuid4())
-    conn = get_connection()
-    try:
-        conn.execute(
-            "INSERT INTO threads (thread_id, user_id, name, created_at) VALUES (?, ?, ?, ?)",
-            (thread_id, user_id, name, _now()),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    return thread_id
+# GET /thread/thread-all
+@thread_router.get("/thread-all")
+def list_threads_api(
+    x_user_id: str = Header(..., description="Clerk user ID"),
+):
+    return get_threads(x_user_id)
 
 
-# ✅ Filter threads by user_id
-def get_threads(user_id: str) -> list[dict]:
-    conn = get_connection()
-    try:
-        rows = conn.execute(
-            "SELECT thread_id, name, created_at FROM threads "
-            "WHERE user_id = ? ORDER BY created_at DESC",
-            (user_id,)
-        ).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+# GET /thread/{thread_id}/messages
+@thread_router.get("/{thread_id}/messages")
+def get_thread_messages_api(thread_id: str):
+    messages = get_thread_messages_for_api(thread_id)
+    return {"thread_id": thread_id, "messages": messages}
 
 
-def save_message(thread_id: str, role: str, content: str) -> dict:
-    conn = get_connection()
-    try:
-        cursor = conn.execute(
-            "INSERT INTO messages (thread_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-            (thread_id, role, content, _now()),
-        )
-        conn.commit()
-        row = conn.execute(
-            "SELECT * FROM messages WHERE id = ?", (cursor.lastrowid,)
-        ).fetchone()
-        return dict(row)
-    finally:
-        conn.close()
-
-
-def get_thread_messages_for_api(thread_id: str) -> list[dict]:
-    conn = get_connection()
-    try:
-        rows = conn.execute(
-            "SELECT id, role, content, created_at FROM messages "
-            "WHERE thread_id = ? ORDER BY id ASC",
-            (thread_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
-
-
-def get_thread_history(thread_id: str, limit: int = 20):
-    from langchain_core.messages import HumanMessage, AIMessage
-
-    conn = get_connection()
-    try:
-        rows = conn.execute(
-            """
-            SELECT role, content FROM messages
-            WHERE thread_id = ? AND role IN ('user', 'assistant')
-            ORDER BY id DESC LIMIT ?
-            """,
-            (thread_id, limit),
-        ).fetchall()
-    finally:
-        conn.close()
-
-    rows = list(reversed(rows))
-    history = []
-    for row in rows:
-        if row["role"] == "user":
-            history.append(HumanMessage(content=row["content"]))
-        else:
-            history.append(AIMessage(content=row["content"]))
-    return history
-
-
-def delete_thread(thread_id: str) -> bool:
-    conn = get_connection()
-    try:
-        result = conn.execute(
-            "DELETE FROM threads WHERE thread_id = ?", (thread_id,)
-        )
-        conn.commit()
-        return result.rowcount > 0
-    finally:
-        conn.close()
+# DELETE /thread/{thread_id}
+@thread_router.delete("/{thread_id}")
+def delete_thread_api(thread_id: str):
+    success = delete_thread(thread_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Thread not found.")
+    return {"message": "Thread deleted ✅", "thread_id": thread_id}

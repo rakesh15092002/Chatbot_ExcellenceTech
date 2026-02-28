@@ -136,7 +136,7 @@ def retrieve_context(thread_id: str, query: str, k: int = 6) -> str:
         return ""
 
     # ✅ Debug — check scores in terminal
-    print(f"📊 Pinecone scores: {[round(s, 3) for _, s in results_with_scores]}")
+    # print(f"📊 Pinecone scores: {[round(s, 3) for _, s in results_with_scores]}")
 
     # ✅ Pinecone cosine returns DISTANCE (lower = more similar)
     # 0.0 = perfect match | 0.5 = loosely related | 1.0 = no relation
@@ -147,7 +147,7 @@ def retrieve_context(thread_id: str, query: str, k: int = 6) -> str:
         if score <= SIMILARITY_THRESHOLD
     ]
 
-    print(f"✅ Relevant chunks: {len(relevant_chunks)}/{len(results_with_scores)}")
+    # print(f"✅ Relevant chunks: {len(relevant_chunks)}/{len(results_with_scores)}")
 
     # ✅ Fallback — if no chunks pass threshold, use all top results
     if not relevant_chunks:
