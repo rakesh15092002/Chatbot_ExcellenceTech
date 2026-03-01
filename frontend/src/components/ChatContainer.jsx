@@ -2,15 +2,13 @@ import React, { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { useParams } from 'react-router-dom';  // ✅
 import { useChat } from '../context/ChatContext';
 import { FileText } from 'lucide-react';
 import ChatNavbar from './ChatNavbar';
 import PromptSection from './PromptSection';
 import WelcomeScreen from './WelcomeScreen';
 
-// ─────────────────────────────────────────────
-// PDF Bubble
-// ─────────────────────────────────────────────
 const PdfBubble = ({ filename }) => (
   <div className="flex items-center gap-3 bg-[#2f2f2f] border border-white/10
                   rounded-2xl px-4 py-3 max-w-[220px]">
@@ -29,16 +27,24 @@ const PdfBubble = ({ filename }) => (
 const isPdfMessage    = (content) => typeof content === "string" && content.startsWith("📎 ");
 const extractFilename = (content) => content.replace("📎 ", "").trim();
 
-// ─────────────────────────────────────────────
-// ChatContainer
-// ─────────────────────────────────────────────
 const ChatContainer = ({ toggleSidebar }) => {
-  const { activeThreadId, messages, fetchMessages } = useChat();
+  const { threadId } = useParams();  // ✅ get threadId from URL
+  const {
+    activeThreadId,
+    setActiveThreadId,
+    messages,
+    fetchMessages
+  } = useChat();
   const scrollRef = useRef(null);
 
+  // ✅ Sync URL threadId → context activeThreadId
   useEffect(() => {
-    if (activeThreadId) fetchMessages(activeThreadId);
-  }, [activeThreadId]);
+    if (threadId && threadId !== activeThreadId) {
+      setActiveThreadId(threadId);
+    } else if (!threadId && activeThreadId) {
+      setActiveThreadId(null);
+    }
+  }, [threadId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -51,14 +57,12 @@ const ChatContainer = ({ toggleSidebar }) => {
   return (
     <div className="flex-1 flex flex-col h-full bg-[#212121] min-w-0">
 
-      {/* Navbar */}
       <ChatNavbar toggleSidebar={toggleSidebar} />
 
       {hasMessages ? (
-        // ─── Chat Mode — messages + prompt at bottom ───
         <>
           <div ref={scrollRef} className="flex-1 overflow-y-auto">
-            <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+            <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
               {messages.map((msg, index) => (
                 <div
                   key={index}
@@ -103,26 +107,16 @@ const ChatContainer = ({ toggleSidebar }) => {
               ))}
             </div>
           </div>
-
-          {/* ✅ Prompt at BOTTOM when chatting */}
           <PromptSection />
         </>
-
       ) : (
-        // ─── Welcome Mode — centered prompt ───
         <div className="flex-1 flex flex-col items-center justify-center px-4">
-
-          {/* Welcome text */}
           <WelcomeScreen />
-
-          {/* ✅ Prompt CENTERED below welcome */}
-          <div className="w-full max-w-2xl mt-6">
+          <div className="w-full max-w-3xl mt-6">
             <PromptSection />
           </div>
-
         </div>
       )}
-
     </div>
   );
 };

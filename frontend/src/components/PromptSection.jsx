@@ -1,8 +1,9 @@
 import React, { useState, useRef } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { useNavigate } from 'react-router-dom';  // ✅
 import { useChat } from "../context/ChatContext";
-import { Send, Paperclip, Loader2, X, FileText } from "lucide-react";
+import { Send, Paperclip, Loader2, X, CheckCircle } from "lucide-react";
 
 const PromptSection = () => {
   const {
@@ -14,13 +15,15 @@ const PromptSection = () => {
     authHeaders,
   } = useChat();
 
+  const navigate = useNavigate();  // ✅
+
   const [input, setInput]               = useState("");
   const [loading, setLoading]           = useState(false);
   const [uploading, setUploading]       = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadedFile, setUploadedFile] = useState(null);
   const fileInputRef                    = useRef(null);
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     if (file.type !== "application/pdf") {
@@ -34,27 +37,28 @@ const PromptSection = () => {
       e.target.value = null;
       return;
     }
-    setSelectedFile(file);
-    toast.success(`📎 "${file.name}" selected.`, { duration: 3000 });
+    await autoUpload(file);
   };
 
-  const createThread = async (name) => {
-    const res = await axios.post(
-      `http://localhost:8000/thread/?name=${encodeURIComponent(name)}`,
-      {},
-      authHeaders()
-    );
-    return res.data.thread_id;
-  };
-
-  const uploadFile = async (file, threadId) => {
+  const autoUpload = async (file) => {
     setUploading(true);
     const toastId = toast.loading(`⏳ Uploading "${file.name}"...`);
+
     try {
+      // Step 1: Create thread
+      const threadName = file.name.split(".")[0];
+      const res = await axios.post(
+        `http://localhost:8000/thread/?name=${encodeURIComponent(threadName)}`,
+        {},
+        authHeaders()
+      );
+      const newThreadId = res.data.thread_id;
+
+      // Step 2: Upload PDF
       const formData = new FormData();
       formData.append("file", file);
-      const res = await axios.post(
-        `http://localhost:8000/documents/upload?thread_id=${threadId}`,
+      const uploadRes = await axios.post(
+        `http://localhost:8000/documents/upload?thread_id=${newThreadId}`,
         formData,
         {
           headers: {
@@ -63,20 +67,40 @@ const PromptSection = () => {
           },
         }
       );
+
+      // Step 3: Update state + URL
+      await refreshThreads();
+      addPdfBubble(newThreadId, file.name);
+      setActiveThreadId(newThreadId);
+      setUploadedFile(file.name);
+      navigate(`/chat/${newThreadId}`);  // ✅ URL updates to thread
+
       toast.success(
-        `✅ "${file.name}" uploaded! (${res.data.chunks_indexed} chunks)`,
+        `✅ "${file.name}" ready! (${uploadRes.data.chunks_indexed} chunks)`,
         { id: toastId, duration: 4000 }
       );
-      return true;
+
+      // Step 4: AI acknowledgment
+      await new Promise(r => setTimeout(r, 600));
+      setMessages(prev => [...prev, {
+        role:    "ai",
+        content:
+          `✅ **${file.name}** uploaded successfully!\n\n` +
+          `💬 You can now ask me anything about **${file.name}**.\n` +
+          `📌 I will answer strictly from the document content.`
+      }]);
+
     } catch (error) {
       const errMsg =
         error.response?.data?.detail?.message ||
         error.response?.data?.detail ||
         "❌ Failed to upload PDF.";
       toast.error(errMsg, { id: toastId, duration: 5000 });
-      return false;
+      setUploadedFile(null);
+      setActiveThreadId(null);
     } finally {
       setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = null;
     }
   };
 
@@ -90,68 +114,21 @@ const PromptSection = () => {
   };
 
   const handleSend = async () => {
-    if ((!input.trim() && !selectedFile) || loading || uploading) return;
+    if (!input.trim() || loading || uploading) return;
+
+    if (!activeThreadId) {
+      toast.error("📎 Please upload a PDF first!");
+      return;
+    }
+
     setLoading(true);
-    let currentThreadId = activeThreadId;
+    const userMsg = input.trim();
+    setInput("");
 
     try {
-      // ── Step A: Create thread if not exists ──
-      if (!currentThreadId) {
-        const threadName = selectedFile
-          ? selectedFile.name.split(".")[0]
-          : input.split(" ").slice(0, 3).join(" ");
-        currentThreadId = await createThread(threadName);
-        await refreshThreads();
-      }
-
-      // ── Step B: Upload PDF ──
-      if (selectedFile) {
-        const fileName = selectedFile.name;
-        addPdfBubble(currentThreadId, fileName);
-        setActiveThreadId(currentThreadId);
-
-        const uploaded = await uploadFile(selectedFile, currentThreadId);
-        setSelectedFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = null;
-
-        if (!uploaded) {
-          setMessages(prev => [...prev, {
-            role:    "ai",
-            content: `❌ Failed to upload **${fileName}**. Please try again.`
-          }]);
-          return;
-        }
-
-        await new Promise(r => setTimeout(r, 600));
-        setMessages(prev => [...prev, {
-          role:    "ai",
-          content:
-            `✅ **${fileName}** uploaded successfully!\n\n` +
-            `💬 You can now ask me anything about **${fileName}**.\n` +
-            `📌 I will answer strictly from the document content.`
-        }]);
-
-        if (input.trim()) {
-          const userMsg = input.trim();
-          setInput("");
-          setMessages(prev => [...prev, { role: "user", content: userMsg }]);
-          await new Promise(r => setTimeout(r, 2000));
-          const reply = await sendMessage(userMsg, currentThreadId);
-          setMessages(prev => [...prev, { role: "ai", content: reply }]);
-        }
-        return;
-      }
-
-      // ── Step C: Send chat message ──
-      if (!input.trim()) return;
-      if (!activeThreadId) setActiveThreadId(currentThreadId);
-
-      const userMsg = input.trim();
-      setInput("");
       setMessages(prev => [...prev, { role: "user", content: userMsg }]);
-      const reply = await sendMessage(userMsg, currentThreadId);
+      const reply = await sendMessage(userMsg, activeThreadId);
       setMessages(prev => [...prev, { role: "ai", content: reply }]);
-
     } catch (error) {
       const errMsg =
         error.response?.data?.detail?.message ||
@@ -168,36 +145,47 @@ const PromptSection = () => {
   };
 
   return (
-    // ✅ Neutral wrapper — works both centered and at bottom
-    <div className="w-full px-4 pb-4 pt-2">
+    <div className="w-full px-6 pb-6 pt-2">
       <div className="max-w-3xl mx-auto w-full">
 
-        {/* File Preview Chip */}
-        {selectedFile && (
-          <div className="flex items-center gap-2 bg-[#2f2f2f] w-fit mb-2 px-3 py-2 rounded-xl border border-white/10">
-            <FileText size={14} className="text-blue-400 shrink-0" />
-            <span className="text-[11px] text-gray-300 truncate max-w-[180px]">
-              {selectedFile.name}
+        {/* Uploading badge */}
+        {uploading && (
+          <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-500/30 w-fit mb-3 px-4 py-2 rounded-xl">
+            <Loader2 size={14} className="text-blue-400 animate-spin shrink-0" />
+            <span className="text-xs text-blue-300">Uploading & indexing PDF...</span>
+          </div>
+        )}
+
+        {/* Success badge */}
+        {!uploading && activeThreadId && uploadedFile && (
+          <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 w-fit mb-3 px-4 py-2 rounded-xl">
+            <CheckCircle size={14} className="text-green-400 shrink-0" />
+            <span className="text-xs text-green-300 truncate max-w-[220px]">
+              {uploadedFile}
             </span>
-            {uploading ? (
-              <Loader2 size={14} className="animate-spin text-blue-400" />
-            ) : (
-              <button
-                onClick={() => {
-                  setSelectedFile(null);
-                  if (fileInputRef.current) fileInputRef.current.value = null;
-                }}
-                className="text-gray-500 hover:text-red-400 transition-colors ml-1"
-              >
-                <X size={14} />
-              </button>
-            )}
+            <span className="text-[10px] text-green-500 font-medium">● Ready</span>
+            <button
+              onClick={() => {
+                setUploadedFile(null);
+                setActiveThreadId(null);
+                setMessages([]);
+                navigate('/chat');  // ✅ back to /chat
+              }}
+              className="text-gray-500 hover:text-red-400 transition-colors ml-1"
+            >
+              <X size={13} />
+            </button>
           </div>
         )}
 
         {/* Input box */}
-        <div className="bg-[#2f2f2f] border border-white/10 rounded-2xl px-4 py-3 flex items-end gap-3 shadow-xl transition-all focus-within:border-blue-500/50">
-
+        <div className={`bg-[#2f2f2f] border rounded-2xl px-5 py-4 flex items-end gap-4 shadow-xl transition-all ${
+          uploading
+            ? "border-blue-500/40"
+            : activeThreadId
+            ? "border-green-500/30 focus-within:border-green-500/50"
+            : "border-white/10 focus-within:border-blue-500/50"
+        }`}>
           <input
             type="file"
             ref={fileInputRef}
@@ -206,21 +194,24 @@ const PromptSection = () => {
             className="hidden"
           />
 
-          {/* Paperclip */}
           <button
             type="button"
-            onClick={() => fileInputRef.current.click()}
+            onClick={() => !uploading && fileInputRef.current.click()}
             disabled={uploading}
-            className={`p-1.5 rounded-lg transition-colors shrink-0 mb-0.5 ${
-              selectedFile
-                ? "text-blue-400"
+            className={`p-2 rounded-lg transition-colors shrink-0 mb-0.5 ${
+              uploading
+                ? "text-blue-400 cursor-not-allowed"
+                : activeThreadId
+                ? "text-green-400 hover:text-green-300"
                 : "text-gray-500 hover:text-white hover:bg-white/10"
-            } ${uploading ? "opacity-50 cursor-not-allowed" : ""}`}
+            }`}
           >
-            <Paperclip size={18} />
+            {uploading
+              ? <Loader2 size={22} className="animate-spin" />
+              : <Paperclip size={22} />
+            }
           </button>
 
-          {/* Textarea */}
           <textarea
             rows="1"
             value={input}
@@ -230,36 +221,50 @@ const PromptSection = () => {
               !e.shiftKey &&
               (e.preventDefault(), handleSend())
             }
-            placeholder="Ask Excellence AI..."
-            className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-gray-500 resize-none max-h-36 py-1 leading-6 custom-scrollbar"
+            disabled={uploading}
+            placeholder={
+              uploading
+                ? "⏳ Please wait, uploading PDF..."
+                : activeThreadId
+                ? "Ask me anything about your PDF..."
+                : "📎 Upload a PDF to start chatting..."
+            }
+            className={`flex-1 bg-transparent border-none outline-none text-base text-white resize-none max-h-44 py-1.5 leading-7 custom-scrollbar transition-all ${
+              uploading
+                ? "placeholder-blue-400/50 cursor-not-allowed"
+                : "placeholder-gray-500"
+            }`}
             onInput={(e) => {
               e.target.style.height = "auto";
-              e.target.style.height = Math.min(e.target.scrollHeight, 144) + "px";
+              e.target.style.height = Math.min(e.target.scrollHeight, 176) + "px";
             }}
           />
 
-          {/* Send */}
           <button
             onClick={handleSend}
-            disabled={(!input.trim() && !selectedFile) || loading || uploading}
-            className={`p-1.5 rounded-lg transition-all shrink-0 mb-0.5 ${
-              (input.trim() || selectedFile) && !uploading
+            disabled={!input.trim() || loading || uploading}
+            className={`p-2 rounded-lg transition-all shrink-0 mb-0.5 ${
+              input.trim() && !loading && !uploading
                 ? "bg-white text-black hover:bg-gray-200"
                 : "text-gray-600 cursor-not-allowed"
             }`}
           >
-            {loading || uploading
-              ? <Loader2 size={16} className="animate-spin" />
-              : <Send size={16} />
+            {loading
+              ? <Loader2 size={20} className="animate-spin" />
+              : <Send size={20} />
             }
           </button>
         </div>
 
-        {/* Bottom hint */}
-        <p className="text-center text-[10px] text-gray-600 mt-2">
-          AI Orbit answers strictly from uploaded PDFs only.
+        <p className="text-center text-xs mt-2">
+          {uploading ? (
+            <span className="text-blue-400/60">⏳ Indexing your PDF, please wait...</span>
+          ) : activeThreadId ? (
+            <span className="text-green-500/60">✅ PDF ready — ask anything!</span>
+          ) : (
+            <span className="text-gray-600">AI Orbit answers strictly from uploaded PDFs only.</span>
+          )}
         </p>
-
       </div>
     </div>
   );

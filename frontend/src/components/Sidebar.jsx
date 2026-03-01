@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useChat } from '../context/ChatContext';
-import { useClerk } from '@clerk/clerk-react';  // ✅ removed useUser
+import { useClerk } from '@clerk/clerk-react';
+import { useNavigate } from 'react-router-dom';  // ✅
 import {
   PanelLeftClose, Plus, MessageSquare,
   Settings, ShieldCheck, Trash2, LogOut
@@ -16,7 +17,8 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     deleteThread,
   } = useChat();
 
-  const { signOut } = useClerk();
+  const { signOut }  = useClerk();
+  const navigate     = useNavigate();  // ✅
 
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
@@ -30,6 +32,10 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     await deleteThread(threadId);
     setConfirmDeleteId(null);
     toast.success("🗑️ Thread deleted successfully!");
+    // ✅ If deleted thread was active, go to /chat
+    if (activeThreadId === threadId) {
+      navigate('/chat');
+    }
   };
 
   const handleCancelDelete = (e) => {
@@ -65,12 +71,18 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
 
       {/* 2. MIDDLE */}
       <div className="flex-1 flex flex-col min-h-0 p-4">
+
+        {/* ✅ New Chat — navigate to /chat */}
         <button
-          onClick={() => setActiveThreadId(null)}
-          className="flex items-center gap-2 p-3 mb-6 hover:bg-[#2f2f2f] rounded-xl border border-white/10 bg-[#212121] text-gray-200 shrink-0 transition-all active:scale-95"
+          onClick={() => {
+            setActiveThreadId(null);
+            navigate('/chat');  // ✅
+          }}
+          className="flex items-center gap-2 p-3 mb-6 rounded-xl text-white shrink-0 transition-all active:scale-95
+                     bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/20"
         >
           <Plus size={18} />
-          <span className="text-sm font-medium">New Chat</span>
+          <span className="text-sm font-semibold">New Chat</span>
         </button>
 
         <div className="flex-1 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
@@ -93,6 +105,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                 onClick={() => {
                   if (confirmDeleteId !== thread.thread_id) {
                     setActiveThreadId(thread.thread_id);
+                    navigate(`/chat/${thread.thread_id}`);  // ✅ URL updates
                   }
                 }}
                 className={`flex items-center gap-3 p-2.5 text-sm rounded-lg cursor-pointer transition-all group ${
@@ -143,16 +156,12 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
         </div>
       </div>
 
-      {/* 3. BOTTOM — Settings + Sign out only */}
+      {/* 3. BOTTOM */}
       <div className="p-4 border-t border-white/5 bg-[#171717] shrink-0 space-y-1">
-
-        {/* Settings */}
         <div className="p-3 text-sm hover:bg-[#2f2f2f] rounded-lg cursor-pointer flex items-center gap-3 text-gray-400 hover:text-white transition-colors group">
           <Settings size={18} className="group-hover:rotate-45 transition-transform duration-500" />
           <span className="font-medium">Settings</span>
         </div>
-
-        {/* ✅ Sign out */}
         <button
           onClick={handleSignOut}
           className="w-full p-3 text-sm hover:bg-red-500/10 rounded-lg flex items-center gap-3 text-gray-400 hover:text-red-400 transition-colors"
