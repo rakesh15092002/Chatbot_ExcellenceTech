@@ -22,7 +22,7 @@ const ChatNavbar = ({ toggleSidebar }) => {
           <PanelLeftOpen size={18} />
         </button>
 
-        <div className="font-medium text-gray-400 text-sm">AI Orbit v1.0</div>
+        <div className="font-medium text-gray-400 text-sm"></div>
       </div>
 
       {/* ✅ User profile */}

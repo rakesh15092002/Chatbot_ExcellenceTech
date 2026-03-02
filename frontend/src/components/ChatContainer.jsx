@@ -28,7 +28,7 @@ const isPdfMessage    = (content) => typeof content === "string" && content.star
 const extractFilename = (content) => content.replace("📎 ", "").trim();
 
 const ChatContainer = ({ toggleSidebar }) => {
-  const { threadId } = useParams();  // ✅ get threadId from URL
+  const { threadId } = useParams();  
   const {
     activeThreadId,
     setActiveThreadId,

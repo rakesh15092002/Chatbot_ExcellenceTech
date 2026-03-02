@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
-import { useUser } from "@clerk/clerk-react";    
+import { useUser } from "@clerk/clerk-react";
 import { useChat } from "../context/ChatContext";
 import { Send, Paperclip, Loader2 } from "lucide-react";
 
@@ -16,9 +16,10 @@ const PromptSection = () => {
     authHeaders,
     currentPdfName,
     setCurrentPdfName,
+    skipNextFetch,    // ✅
   } = useChat();
 
-  const { user }   = useUser();       // ✅ for fetch auth header
+  const { user }   = useUser();
   const navigate   = useNavigate();
 
   const [input, setInput]         = useState("");
@@ -26,9 +27,6 @@ const PromptSection = () => {
   const [uploading, setUploading] = useState(false);
   const fileInputRef              = useRef(null);
 
-  // ─────────────────────────────────────────────
-  // File validation
-  // ─────────────────────────────────────────────
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -39,16 +37,13 @@ const PromptSection = () => {
     }
     const sizeMB = file.size / (1024 * 1024);
     if (sizeMB > 20) {
-      toast.error(`❌ File too large (${sizeMB.toFixed(1)} MB). Max: 20 MB.`);
+      toast.error(`File too large (${sizeMB.toFixed(1)} MB). Max: 20 MB.`);
       e.target.value = null;
       return;
     }
     await autoUpload(file);
   };
 
-  // ─────────────────────────────────────────────
-  // Auto upload
-  // ─────────────────────────────────────────────
   const autoUpload = async (file) => {
     setUploading(true);
     const toastId = toast.loading(`⏳ Uploading "${file.name}"...`);
@@ -80,8 +75,12 @@ const PromptSection = () => {
       // Step 3: Update state + URL
       await refreshThreads();
       addPdfBubble(newThreadId, file.name);
+
+      // ✅ Set flag BEFORE setActiveThreadId so useEffect skips fetch
+      skipNextFetch.current = true;
+
       setActiveThreadId(newThreadId);
-      setCurrentPdfName(file.name);       // ✅ context — survives reload
+      setCurrentPdfName(file.name);
       navigate(`/chat/${newThreadId}`);
 
       toast.success(
@@ -89,7 +88,7 @@ const PromptSection = () => {
         { id: toastId, duration: 4000 }
       );
 
-      // Step 4: AI acknowledgment
+      // Step 4: AI acknowledgment — NOT overwritten now ✅
       await new Promise(r => setTimeout(r, 600));
       setMessages(prev => [...prev, {
         role:    "ai",
@@ -113,14 +112,11 @@ const PromptSection = () => {
     }
   };
 
-  // ─────────────────────────────────────────────
-  // ✅ Streaming send
-  // ─────────────────────────────────────────────
   const handleSend = async () => {
     if (!input.trim() || loading || uploading) return;
 
     if (!activeThreadId) {
-      toast.error("📎 Please upload a PDF first!");
+      toast.error("Please upload a PDF first!");
       return;
     }
 
@@ -128,10 +124,7 @@ const PromptSection = () => {
     const userMsg = input.trim();
     setInput("");
 
-    // ✅ Add user message
     setMessages(prev => [...prev, { role: "user", content: userMsg }]);
-
-    // ✅ Add empty AI message — we'll stream into it
     setMessages(prev => [...prev, { role: "ai", content: "" }]);
 
     try {
@@ -139,7 +132,7 @@ const PromptSection = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-user-id":    user?.id || "",   // ✅ auth
+          "x-user-id":    user?.id || "",
         },
         body: JSON.stringify({
           message:   userMsg,
@@ -161,14 +154,10 @@ const PromptSection = () => {
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-
           try {
             const json = JSON.parse(line.slice(6));
-
             if (json.done) break;
-
             if (json.chunk) {
-              // ✅ Append chunk to last AI message
               setMessages(prev => {
                 const updated = [...prev];
                 const last    = updated[updated.length - 1];
@@ -214,28 +203,6 @@ const PromptSection = () => {
           </div>
         )}
 
-        {/* ✅ Success badge — uses currentPdfName from context */}
-        {/* {!uploading && activeThreadId && (
-          <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 w-fit mb-3 px-4 py-2 rounded-xl">
-            <CheckCircle size={14} className="text-green-400 shrink-0" />
-            <span className="text-xs text-green-300 truncate max-w-[220px]">
-              {currentPdfName || "PDF Ready"}
-            </span>
-            <span className="text-[10px] text-green-500 font-medium">● Ready</span>
-            <button
-              onClick={() => {
-                setCurrentPdfName(null);
-                setActiveThreadId(null);
-                setMessages([]);
-                navigate("/chat");
-              }}
-              className="text-gray-500 hover:text-red-400 transition-colors ml-1"
-            >
-              <X size={13} />
-            </button>
-          </div>
-        )} */}
-
         {/* Input box */}
         <div className={`bg-[#2f2f2f] border rounded-2xl px-5 py-4 flex items-end gap-4 shadow-xl transition-all ${
           uploading
@@ -253,7 +220,6 @@ const PromptSection = () => {
             className="hidden"
           />
 
-          {/* Paperclip */}
           <button
             type="button"
             onClick={() => !uploading && fileInputRef.current.click()}
@@ -272,7 +238,6 @@ const PromptSection = () => {
             }
           </button>
 
-          {/* Textarea */}
           <textarea
             rows="1"
             value={input}
@@ -301,7 +266,6 @@ const PromptSection = () => {
             }}
           />
 
-          {/* Send */}
           <button
             onClick={handleSend}
             disabled={!input.trim() || loading || uploading}
@@ -318,7 +282,6 @@ const PromptSection = () => {
           </button>
         </div>
 
-        {/* Bottom hint */}
         <p className="text-center text-xs mt-2">
           {uploading ? (
             <span className="text-blue-400/60">⏳ Indexing your PDF, please wait...</span>
@@ -328,7 +291,6 @@ const PromptSection = () => {
             <span className="text-gray-600">AI Orbit answers strictly from uploaded PDFs only.</span>
           )}
         </p>
-
       </div>
     </div>
   );
