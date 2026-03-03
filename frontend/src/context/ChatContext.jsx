@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useUser } from '@clerk/clerk-react';
 
 const ChatContext = createContext();
+const API = import.meta.env.VITE_API_URL;  // ✅
 
 export const ChatProvider = ({ children }) => {
   const { user } = useUser();
@@ -15,7 +16,7 @@ export const ChatProvider = ({ children }) => {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [currentPdfName, setCurrentPdfName]   = useState(null);
 
-  const skipNextFetch = useRef(false);  // ✅ flag to skip fetch on new upload
+  const skipNextFetch = useRef(false);
 
   const authHeaders = () => ({
     headers: { "x-user-id": user?.id || "" }
@@ -26,7 +27,7 @@ export const ChatProvider = ({ children }) => {
     setLoadingThreads(true);
     try {
       const response = await axios.get(
-        'http://localhost:8000/thread/thread-all',
+        `${API}/thread/thread-all`,  // ✅
         authHeaders()
       );
       setThreads(response.data);
@@ -41,8 +42,8 @@ export const ChatProvider = ({ children }) => {
     if (!id) return;
     setLoadingMessages(true);
     try {
-      const response    = await axios.get(
-        `http://localhost:8000/thread/${id}/messages`,
+      const response = await axios.get(
+        `${API}/thread/${id}/messages`,  // ✅
         authHeaders()
       );
       const backendMsgs = response.data.messages || [];
@@ -63,7 +64,7 @@ export const ChatProvider = ({ children }) => {
   const fetchCurrentPdf = async (threadId) => {
     try {
       const res  = await axios.get(
-        `http://localhost:8000/documents/?thread_id=${threadId}`,
+        `${API}/documents/?thread_id=${threadId}`,  // ✅
         authHeaders()
       );
       const docs = res.data?.documents || [];
@@ -93,7 +94,7 @@ export const ChatProvider = ({ children }) => {
   const deleteThread = async (threadId) => {
     try {
       await axios.delete(
-        `http://localhost:8000/thread/${threadId}`,
+        `${API}/thread/${threadId}`,  // ✅
         authHeaders()
       );
       setThreads(prev => prev.filter(t => t.thread_id !== threadId));
@@ -118,7 +119,6 @@ export const ChatProvider = ({ children }) => {
 
   useEffect(() => {
     if (activeThreadId) {
-      // ✅ Skip fetch if flag is set (new upload — messages already in state)
       if (skipNextFetch.current) {
         skipNextFetch.current = false;
         return;
@@ -150,7 +150,7 @@ export const ChatProvider = ({ children }) => {
       authHeaders,
       currentPdfName,
       setCurrentPdfName,
-      skipNextFetch,    // ✅ expose ref
+      skipNextFetch,
     }}>
       {children}
     </ChatContext.Provider>

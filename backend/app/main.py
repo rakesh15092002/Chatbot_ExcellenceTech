@@ -21,7 +21,10 @@ app = FastAPI(title="RAG Chatbot API 🤖", lifespan=lifespan)
 # ✅ CORS middleware — must be added BEFORE routers
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite dev server
+    allow_origins=[
+        "http://localhost:5173",
+        "http://116.202.210.102:9055",   # ✅ add this
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
