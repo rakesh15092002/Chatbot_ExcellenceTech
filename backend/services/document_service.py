@@ -163,106 +163,87 @@ def process_pdf(thread_id: str, file_bytes: bytes, filename: str) -> dict:
 # ─────────────────────────────────────────────
 # 2. Retrieve relevant context for a query
 # ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# 2. Retrieve relevant context for a query (UPDATED)
+# ─────────────────────────────────────────────
 def retrieve_context(thread_id: str, query: str, k: int = 10) -> str:
 
-    # ── Generic queries enrich karo ───────────────────────────────────
+    # ── Step 1: Broad Query Handling (Enrichment) ─────────────────────
+    # If the user asks for a summary or overview, expand the query to find key points.
     generic_keywords = ["summary", "summarize", "explain", "overview", "about",
                         "describe", "tell me", "what is this", "50 words", "100 words",
-                        "500 words", "short", "brief", "all content"]
-    if any(kw in query.lower() for kw in generic_keywords):
-        query = query + " introduction overview main content key points"
-        print(f"🔄 Query enriched")
+                        "content", "all content", "brief"]
+    
+    is_generic = any(kw in query.lower() for kw in generic_keywords)
+    if is_generic:
+        query = f"{query} introduction main content key points conclusion summary"
+        print(f"🔄 Query enriched for better retrieval")
 
-    # ── Step 1: SQLite se doc_ids aur chunk_count lo ──────────────────
+    # ── Step 2: SQLite Metadata Retrieval ─────────────────────────────
     conn = get_connection()
     try:
         rows = conn.execute(
             "SELECT doc_id, chunk_count FROM documents WHERE thread_id = ?",
             (thread_id,)
         ).fetchall()
-        doc_ids      = {r["doc_id"] for r in rows}
+        doc_ids = {r["doc_id"] for r in rows}
         total_chunks = sum(r["chunk_count"] for r in rows)
     finally:
         conn.close()
 
-    print(f"🗄️  doc_ids: {doc_ids} | total chunks: {total_chunks}")
-
     if not doc_ids:
-        print("⚠️  No documents found in SQLite for this thread!")
+        print("⚠️ No documents found for this thread.")
         return ""
 
-    # ── Step 2: Hybrid strategy ───────────────────────────────────────
-    # Chhoti PDF (≤100 chunks) → poori PDF do LLM ko
-    # Badi PDF   (>100 chunks) → sirf relevant chunks do
-    if total_chunks <= 100:
-        fetch_k = min(total_chunks + 10, 200)
-        print(f"📖 Small PDF — fetching all {fetch_k} chunks")
+    # ── Step 3: Adaptive Fetch Strategy ───────────────────────────────
+    # For small PDFs or generic queries, fetch more chunks to ensure no context is missed.
+    if total_chunks <= 100 or is_generic:
+        fetch_k = min(total_chunks, 150)
     else:
-        fetch_k = k * 4
-        print(f"📚 Large PDF — fetching top {fetch_k} relevant chunks")
+        fetch_k = k * 3
 
-    # ── Step 3: Pinecone se fetch karo ───────────────────────────────
+    # ── Step 4: Pinecone Search with Score ────────────────────────────
     try:
+        # Apply the thread_id filter directly at the Pinecone level for accuracy.
         results_with_scores = vector_store.similarity_search_with_score(
             query,
             k=fetch_k,
+            filter={"thread_id": {"$eq": thread_id}}
         )
-        print(f"📊 Pinecone fetched: {len(results_with_scores)} chunks")
-
     except Exception as e:
         print(f"❌ Pinecone retrieval error: {e}")
         return ""
 
     if not results_with_scores:
-        print("⚠️  Pinecone ne koi result nahi diya!")
         return ""
 
-    # ── Step 4: Sirf is thread ke chunks filter karo ─────────────────
-    thread_results = [
-        (doc, score) for doc, score in results_with_scores
-        if doc.metadata.get("doc_id") in doc_ids
-        or doc.metadata.get("thread_id") == thread_id
-    ]
-    print(f"🔍 Matched chunks: {len(thread_results)}/{len(results_with_scores)}")
+    # ── Step 5: Sorting & Filtering Logic ─────────────────────────────
+    # Sort by page number to maintain logical flow for the LLM.
+    results_with_scores.sort(key=lambda x: x[0].metadata.get("page_label", 0))
 
-    if not thread_results:
-        print("❌ Koi matching chunk nahi mila!")
-        return ""
-
-    # ── Step 5: Page number se sort karo ─────────────────────────────
-    def get_page(item):
-        try:
-            return float(item[0].metadata.get("page_label", 999))
-        except:
-            return 999
-
-    thread_results.sort(key=get_page)
-
-    # ── Step 6: Chhoti PDF → sab do | Badi PDF → threshold filter ────
+    # Threshold Adjustment: 
+    # For OpenAI embeddings, 0.70 (Generic) and 0.75 (Specific) provide a good balance.
+    THRESHOLD = 0.70 if is_generic else 0.75
+    
     parts = []
-
-    if total_chunks <= 100:
-        for doc, score in thread_results:
-            page    = doc.metadata.get("page_label", "?")
+    for doc, score in results_with_scores:
+        # Skip filtering for very small PDFs to provide maximum context.
+        # Apply threshold for larger documents to reduce noise.
+        if total_chunks <= 50 or score >= THRESHOLD:
+            page = doc.metadata.get("page_label", "?")
             content = doc.page_content.strip()
             parts.append(f"[Page {page}]: {content}")
-    else:
-        SIMILARITY_THRESHOLD = 0.85
-        for doc, score in thread_results:
-            if score <= SIMILARITY_THRESHOLD:
-                page    = doc.metadata.get("page_label", "?")
-                content = doc.page_content.strip()
-                parts.append(f"[Page {page}]: {content}")
 
-        if not parts:
-            for doc, score in thread_results[:k]:
-                page    = doc.metadata.get("page_label", "?")
-                content = doc.page_content.strip()
-                parts.append(f"[Page {page}]: {content}")
+    # ── Step 6: Fallback (Avoid "Information Not Found") ──────────────
+    # If the threshold was too strict and removed all chunks, use the top 5 results as a backup.
+    if not parts and results_with_scores:
+        print("⚠️ Using fallback: Threshold was too strict.")
+        for doc, _ in results_with_scores[:5]:
+            page = doc.metadata.get("page_label", "?")
+            parts.append(f"[Page {page}]: {doc.page_content.strip()}")
 
-    print(f"✅ Total context chunks sent to LLM: {len(parts)}")
+    print(f"✅ Sent {len(parts)} chunks to LLM.")
     return "\n\n---\n\n".join(parts)
-
 
 # ─────────────────────────────────────────────
 # 3. List documents for a thread
