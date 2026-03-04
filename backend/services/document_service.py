@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────
 # REQUIRED INSTALLS:
-#   pip install pymupdf langchain-community langchain-huggingface
-#   pip install langchain-pinecone pinecone-client sentence-transformers python-dotenv
+#   pip install pymupdf langchain-community langchain-openai
+#   pip install langchain-pinecone pinecone-client python-dotenv
 # ─────────────────────────────────────────────
 
 import os
@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings           # ✅ OpenAI
 from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone, ServerlessSpec
 from dotenv import load_dotenv
@@ -24,7 +24,7 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX   = os.getenv("PINECONE_INDEX_NAME", "rag-chatbot")
 PINECONE_CLOUD   = os.getenv("PINECONE_CLOUD", "aws")
 PINECONE_REGION  = os.getenv("PINECONE_REGION", "us-east-1")
-EMBEDDING_DIM    = 384
+EMBEDDING_DIM    = 1536                                  # ✅ OpenAI dimension
 
 # ── Pinecone init with index guard ────────────
 pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -40,20 +40,23 @@ if PINECONE_INDEX not in existing_indexes:
 
 pinecone_index = pc.Index(PINECONE_INDEX)
 
-# ── Embeddings & VectorStore ──────────────────
-embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
+# ── OpenAI Embeddings ─────────────────────────
+embeddings = OpenAIEmbeddings(
+    model="text-embedding-3-small",
+    openai_api_key=os.getenv("OPENAI_API_KEY"),
 )
+
 vector_store = PineconeVectorStore(
     index=pinecone_index,
     embedding=embeddings,
     text_key="text",
 )
 
-# ── Chunking ──────────────────────────────────
+# ── Chunking — page-based ─────────────────────
+# Agar page 3000 chars se badi ho toh split, warna ek page = ek chunk
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,
-    chunk_overlap=150,
+    chunk_size=3000,
+    chunk_overlap=100,
     length_function=len,
     separators=["\n\n", "\n", " ", ""],
 )
@@ -101,7 +104,18 @@ def process_pdf(thread_id: str, file_bytes: bytes, filename: str) -> dict:
         for i, page in enumerate(pages):
             page.metadata["page_label"] = i + 1
 
-        chunks = text_splitter.split_documents(pages)
+        # ✅ Page-based chunking — har page ek chunk
+        chunks = []
+        for page in pages:
+            content = page.page_content.strip()
+            if not content:
+                continue
+            if len(content) > 3000:
+                sub_chunks = text_splitter.split_documents([page])
+                chunks.extend(sub_chunks)
+            else:
+                chunks.append(page)  # poori page ek chunk
+
         print(f"✂️  Chunks created: {len(chunks)}")
 
         if not chunks:
@@ -151,6 +165,14 @@ def process_pdf(thread_id: str, file_bytes: bytes, filename: str) -> dict:
 # ─────────────────────────────────────────────
 def retrieve_context(thread_id: str, query: str, k: int = 10) -> str:
 
+    # ── Generic queries enrich karo ───────────────────────────────────
+    generic_keywords = ["summary", "summarize", "explain", "overview", "about",
+                        "describe", "tell me", "what is this", "50 words", "100 words",
+                        "500 words", "short", "brief", "all content"]
+    if any(kw in query.lower() for kw in generic_keywords):
+        query = query + " introduction overview main content key points"
+        print(f"🔄 Query enriched")
+
     # ── Step 1: SQLite se doc_ids aur chunk_count lo ──────────────────
     conn = get_connection()
     try:
@@ -170,13 +192,13 @@ def retrieve_context(thread_id: str, query: str, k: int = 10) -> str:
         return ""
 
     # ── Step 2: Hybrid strategy ───────────────────────────────────────
-    # Chhoti PDF  (≤50 chunks)  → poori PDF do LLM ko
-    # Badi PDF    (>50 chunks)  → sirf relevant chunks do
+    # Chhoti PDF (≤100 chunks) → poori PDF do LLM ko
+    # Badi PDF   (>100 chunks) → sirf relevant chunks do
     if total_chunks <= 100:
         fetch_k = min(total_chunks + 10, 200)
         print(f"📖 Small PDF — fetching all {fetch_k} chunks")
     else:
-        fetch_k = k * 4  # sirf relevant chunks
+        fetch_k = k * 4
         print(f"📚 Large PDF — fetching top {fetch_k} relevant chunks")
 
     # ── Step 3: Pinecone se fetch karo ───────────────────────────────
@@ -220,13 +242,11 @@ def retrieve_context(thread_id: str, query: str, k: int = 10) -> str:
     parts = []
 
     if total_chunks <= 100:
-        # Poori PDF — no filtering
         for doc, score in thread_results:
             page    = doc.metadata.get("page_label", "?")
             content = doc.page_content.strip()
             parts.append(f"[Page {page}]: {content}")
     else:
-        # Badi PDF — sirf relevant chunks
         SIMILARITY_THRESHOLD = 0.85
         for doc, score in thread_results:
             if score <= SIMILARITY_THRESHOLD:
@@ -234,7 +254,6 @@ def retrieve_context(thread_id: str, query: str, k: int = 10) -> str:
                 content = doc.page_content.strip()
                 parts.append(f"[Page {page}]: {content}")
 
-        # Fallback agar kuch na mile
         if not parts:
             for doc, score in thread_results[:k]:
                 page    = doc.metadata.get("page_label", "?")

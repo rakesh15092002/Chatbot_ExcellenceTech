@@ -3,18 +3,16 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from typing import TypedDict, Annotated
 from langchain_core.messages import BaseMessage, AIMessage, SystemMessage
-from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI   # ✅ OpenAI
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-MODEL_NAME = "llama-3.3-70b-versatile"
-
-llm = ChatGroq(
-    model=MODEL_NAME,
-    api_key=os.getenv("GROQ_API_KEY"),
-    temperature=0,  # ✅ 0 = strict, no creativity, stick to context only
+llm = ChatOpenAI(
+    model="gpt-4o",
+    api_key=os.getenv("OPENAI_API_KEY"),
+    temperature=0,  # strict — context se bahar nahi jaayega
 )
 
 
@@ -32,26 +30,27 @@ def router_node(state: ChatState) -> ChatState:
 
 
 # ─────────────────────────────────────────────
-# Node 2: PDF Chat — strict PDF-only answers
+# Node 2: PDF Chat
 # ─────────────────────────────────────────────
 def pdf_chat_node(state: ChatState) -> ChatState:
     system_prompt = SystemMessage(content=(
-        "You are a strict PDF assistant. Your ONLY job is to answer questions "
-        "using the document context provided below.\n\n"
-        "STRICT RULES you must NEVER break:\n"
-        "1. ONLY use information from the DOCUMENT CONTEXT below.\n"
-        "2. NEVER use your general training knowledge.\n"
-        "3. NEVER make up or infer information not explicitly in the context.\n"
-        "4. If the answer is not found in the context, respond EXACTLY with:\n"
-        "   'I don't know. This information is not available in the uploaded PDF.'\n"
-        "5. Do not apologize, speculate, or add extra commentary.\n\n"
+        "You are an intelligent PDF assistant. Answer questions using the document context below.\n\n"
+        "RULES:\n"
+        "1. Use ONLY the information from the DOCUMENT CONTEXT below.\n"
+        "2. The context contains extracted text from a PDF — headings, sections, and content are all present.\n"
+        "3. If a section heading like 'Abstract', 'Introduction', 'Conclusion' appears in context,\n"
+        "   confidently say YES it is present and provide its content directly.\n"
+        "4. Do NOT say 'not explicitly mentioned' if the content is clearly there.\n"
+        "5. Answer confidently and directly — do not hedge unnecessarily.\n"
+        "6. If the answer is truly not in the context, say:\n"
+        "   'This information is not available in the uploaded PDF.'\n"
+        "7. Do NOT make up information not in the context.\n\n"
         "=== DOCUMENT CONTEXT ===\n"
         f"{state['context']}\n"
         "=========================\n\n"
-        "Answer strictly from the context above."
+        "Now answer the user's question directly and confidently."
     ))
 
-    # Strip any old system messages from history
     history = [m for m in state["messages"] if not isinstance(m, SystemMessage)]
     final_messages = [system_prompt] + history
 
@@ -59,7 +58,7 @@ def pdf_chat_node(state: ChatState) -> ChatState:
     return {
         "messages": [response],
         "mode":     state["mode"],
-        "context":  state["context"]
+        "context":  state["context"],
     }
 
 
@@ -75,7 +74,7 @@ def no_pdf_node(state: ChatState) -> ChatState:
 
 
 # ─────────────────────────────────────────────
-# Node 4: PDF exists but query not found in it
+# Node 4: PDF exists but query not found
 # ─────────────────────────────────────────────
 def no_context_node(state: ChatState) -> ChatState:
     reply = AIMessage(content=(

@@ -85,21 +85,20 @@ async def stream_chat_message(thread_id: str, message: str) -> AsyncGenerator[st
 
             "IMPORTANT RULES:\n"
             "1. Use ONLY the information from the DOCUMENT CONTEXT below.\n"
-            "2. The context is extracted chunks from a PDF — it may not contain every section heading explicitly.\n"
-            "   But if the content of a section IS present in the context, you CAN confirm it exists.\n"
-            "3. For structural questions like 'is abstract present?', 'what headings are there?' — \n"
-            "   reason carefully from the context. If abstract content is present, say YES it exists.\n"
-            "4. NEVER say a section is absent just because its heading word is not in the context.\n"
-            "   Look at the actual content and infer.\n"
-            "5. If the answer is truly not available even after reasoning, say:\n"
-            "   'This information is not clearly available in the provided PDF context.'\n"
-            "6. Do NOT make up information not in the context.\n\n"
+            "2. The context contains extracted text from a PDF — headings, sections, and content are all present.\n"
+            "3. If a section heading like 'Abstract', 'Introduction', 'Conclusion' etc. appears in context,\n"
+            "   confidently say YES it is present and provide its content directly.\n"
+            "4. Do NOT say 'not explicitly mentioned' if the content is clearly there.\n"
+            "5. Answer confidently and directly — do not hedge unnecessarily.\n"
+            "6. If the answer is truly not in the context, say:\n"
+            "   'This information is not available in the uploaded PDF.'\n"
+            "7. Do NOT make up information not in the context.\n\n"
 
             "=== DOCUMENT CONTEXT ===\n"
             f"{context}\n"
             "========================\n\n"
 
-            "Now answer the user's question carefully based on the context above."
+            "Now answer the user's question directly and confidently based on the context above."
         ))
 
         # Strip old system messages

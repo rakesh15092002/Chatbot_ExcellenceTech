@@ -73,16 +73,17 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       <div className="flex-1 flex flex-col min-h-0 p-4">
 
         {/* ✅ New Chat — navigate to /chat */}
+        {/* ✅ New Chat — Updated UI with White/Light Gray Background */}
         <button
           onClick={() => {
             setActiveThreadId(null);
-            navigate('/chat');  // ✅
+            navigate('/chat');
           }}
-          className="flex items-center gap-2 p-3 mb-6 rounded-xl text-white shrink-0 transition-all active:scale-95
-                     bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/20"
+          className="flex items-center gap-2 p-3 mb-6 rounded-xl shrink-0 transition-all active:scale-95
+                    bg-white hover:bg-gray-100 text-gray-900 shadow-lg shadow-white/5 border border-white/20"
         >
-          <Plus size={18} />
-          <span className="text-sm font-semibold">New Chat</span>
+          <Plus size={18} className="text-gray-900" />
+          <span className="text-sm font-bold">New Chat</span>
         </button>
 
         <div className="flex-1 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
